@@ -40,7 +40,7 @@ two(){
                         useradd -m -p "$pass" "$username"
                         usermod -a -G wheel "$username"
                         clear
-                        [[ $? -eq 0 ]] && echo -e "${GREEN}$username has been added to system as admin!${STD}" || echo "${RED}Failed to add a user!${STD}"
+                        [[ $? -eq 0 ]] && echo -e "${GREEN}$username has been added to system as admin!${STD}" && sleep 2 || echo "${RED}Failed to add a user!${STD}"
                         pause
                 fi
         else
