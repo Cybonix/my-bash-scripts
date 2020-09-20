@@ -1,0 +1,12 @@
+#!/bin/bash
+# Purpose - A simple Bash function that backs up files according to a standardized naming convention.
+# Modified by - Joseph Mark Orimoloye <cybonix@gmail.com>
+
+# This function is not working...  I need to troubleshoot it.
+function backup () {
+	date_stamp=$(date "+%Y-%m-%d.%H%M.bak");
+	newname=$1.$date_stamp;
+	mv $1.$date_stamp $newname;
+	echo "Backed up $1.$date_stamp to $newname.";
+	cp -p $newname $1.$date_stamp;
+}
