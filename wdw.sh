@@ -9,6 +9,9 @@ fi
 # Get the list of real users
 real_users=$(awk -F: '$3 >= 1000 && $3 <= 60000 {print $1}' /etc/passwd)
 
+# Add root user to the list
+real_users=$(echo -e "$real_users\nroot")
+
 # Get the list of last logged-in instances
 logins=$(last -F | head -n -2)
 
@@ -18,7 +21,7 @@ while IFS= read -r line; do
     user=$(echo "$line" | awk '{print $1}')
     login_time=$(echo "$line" | awk '{$1=$2=$3=""; print $0}')
 
-    # Check if the user is a real user
+    # Check if the user is a real user or root
     if echo "$real_users" | grep -q "^$user$"; then
         # Print the user and login time
         echo "$user - Logged in at: $login_time"
