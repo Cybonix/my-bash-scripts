@@ -6,7 +6,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Get the list of real users
-real_users=($(getent passwd | awk -F: '$3 >= 1000 && $3 <= 60000 {print $1}'))
+mapfile -t real_users < <(getent passwd | awk -F: '$3 >= 1000 && $3 <= 60000 {print $1}')
 real_users+=(root)
 
 process_login() {
@@ -16,7 +16,7 @@ process_login() {
     login_time=$(echo "$line" | awk '{$1=$2=$3=$4=$5=""; print $0}')
 
     # Check if the user is a real user
-    if [[ " ${real_users[@]} " =~ " $user " ]]; then
+    if [[ " ${real_users[*]} " == *" $user "* ]]; then
         if [ "$current" -eq 1 ]; then
             login_timestamp=$(date --date="$login_time" +%s)
             current_timestamp=$(date +%s)
@@ -27,10 +27,10 @@ process_login() {
         fi
 
         # Get the user's home directory and check if the history file exists and is readable
-        home_dir=$(getent passwd $user | cut -d: -f6)
+        home_dir=$(getent passwd "$user" | cut -d: -f6)
         history_file="$home_dir/.bash_history"
         if [ -f "$history_file" ]; then
-            egrep -i '^(vi|nano|cat|less|more|tail|head|touch|rm|cp|mv|mkdir|rmdir|cd) ' "$history_file" | while read -r command; do
+            grep -E -i '^(vi|nano|cat|less|more|tail|head|touch|rm|cp|mv|mkdir|rmdir|cd) ' "$history_file" | while read -r command; do
                 echo "|-- $command"
             done
         fi
