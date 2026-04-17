@@ -30,13 +30,13 @@ two(){
         if [[ $(id -u) -eq 0 ]]; then
                 read -p "Enter username : " username
                 read -s -p "Enter password : " password
-                egrep "^$username" /etc/passwd >/dev/null
+                grep -E "^$username" /etc/passwd >/dev/null
                 if [[ $? -eq 0 ]]; then
                         clear
                         echo -e "${RED}$username already exist!${STD}" && sleep 2
                         pause
                 else
-                        pass=$(perl -e 'print crypt($ARGV[0], "password")' $password)
+                        pass=$(perl -e 'print crypt($ARGV[0], "password")' "$password")
                         useradd -m -p "$pass" "$username"
                         usermod -a -G wheel "$username"
                         clear
@@ -53,13 +53,13 @@ two(){
 three(){
         if [[ $(id -u) -eq 0 ]]; then
                 read -p "Enter username : " username
-                egrep "^$username" /etc/passwd >/dev/null
+                grep -E "^$username" /etc/passwd >/dev/null
                 if [[ $? -ne 0 ]]; then
                         clear
                         echo -e "${RED}$username does not exist!${STD}" && sleep 2
                         pause
                 else
-                        userdel -r $username && echo -e "${GREEN}$username has been deleted!${STD}" && sleep 2
+                        userdel -r "$username" && echo -e "${GREEN}$username has been deleted!${STD}" && sleep 2
                         pause
                 fi
         else
