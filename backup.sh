@@ -19,7 +19,7 @@ date
 echo
 
 # Backup the files using tar.
-tar czf $dest/$archive_file $backup_files
+tar czf "$dest/$archive_file" $backup_files
 
 # Print end status message.
 echo "Backup Finished with status $?"

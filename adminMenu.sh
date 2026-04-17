@@ -4,8 +4,6 @@
 # ----------------------------------
 # Step #1: Define variables
 # ----------------------------------
-EDITOR=vim
-PASSWD=/etc/passwd
 RED='\033[0;41;30m'
 GREEN='\033[0;42;30m'
 STD='\033[0;0;39m'
@@ -14,12 +12,14 @@ STD='\033[0;0;39m'
 # Step #2: User defined functions
 # ----------------------------------
 pause(){
-  read -p "Press [Enter] key to continue..." fackEnterKey
+  read -r -p "Press [Enter] key to continue..." _
 }
 
 # function to list user accounts
 one(){
-        eval getent passwd {$(awk '/^UID_MIN/ {print $2}' /etc/login.defs)..$(awk '/^UID_MAX/ {print $2}' /etc/login.defs)} | cut -d: -f1 && sleep 2
+        uid_min=$(awk '/^UID_MIN/ {print $2}' /etc/login.defs)
+        uid_max=$(awk '/^UID_MAX/ {print $2}' /etc/login.defs)
+        getent passwd | awk -F: -v min="$uid_min" -v max="$uid_max" '$3 >= min && $3 <= max {print $1}' && sleep 2
 pause
 }
 
@@ -28,19 +28,22 @@ two(){
         # Adds a user to Linux system as admin, including password
         # Am I a Root user?
         if [[ $(id -u) -eq 0 ]]; then
-                read -p "Enter username : " username
-                read -s -p "Enter password : " password
-                egrep "^$username" /etc/passwd >/dev/null
-                if [[ $? -eq 0 ]]; then
+                read -r -p "Enter username : " username
+                read -r -s -p "Enter password : " password
+                if grep -E "^$username" /etc/passwd >/dev/null; then
                         clear
                         echo -e "${RED}$username already exist!${STD}" && sleep 2
                         pause
                 else
-                        pass=$(perl -e 'print crypt($ARGV[0], "password")' $password)
+                        pass=$(perl -e 'print crypt($ARGV[0], "password")' "$password")
                         useradd -m -p "$pass" "$username"
-                        usermod -a -G wheel "$username"
+                        if usermod -a -G wheel "$username"; then
                         clear
-                        [[ $? -eq 0 ]] && echo -e "${GREEN}$username has been added to system as admin!${STD}" || echo "${RED}Failed to add a user!${STD}"
+                        echo -e "${GREEN}$username has been added to system as admin!${STD}"
+                        else
+                        clear
+                        echo "${RED}Failed to add a user!${STD}"
+                        fi
                         pause
                 fi
         else
@@ -52,14 +55,13 @@ two(){
 # function to remove admin accounts
 three(){
         if [[ $(id -u) -eq 0 ]]; then
-                read -p "Enter username : " username
-                egrep "^$username" /etc/passwd >/dev/null
-                if [[ $? -ne 0 ]]; then
+                read -r -p "Enter username : " username
+                if ! grep -E "^$username" /etc/passwd >/dev/null; then
                         clear
                         echo -e "${RED}$username does not exist!${STD}" && sleep 2
                         pause
                 else
-                        userdel -r $username && echo -e "${GREEN}$username has been deleted!${STD}" && sleep 2
+                        userdel -r "$username" && echo -e "${GREEN}$username has been deleted!${STD}" && sleep 2
                         pause
                 fi
         else
@@ -87,7 +89,7 @@ show_menus() {
 # Exit when user select 4 from the menu option.
 read_options(){
         local choice
-        read -p "Enter choice [ 1 - 4] " choice
+        read -r -p "Enter choice [ 1 - 4] " choice
         case $choice in
                 1) one ;;
                 2) two ;;
