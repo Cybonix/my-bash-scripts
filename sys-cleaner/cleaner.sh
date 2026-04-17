@@ -91,9 +91,7 @@ scan_for_old_files() {
 
     # Sort by size (field 2) descending and take top 20
     # Then print
-    (for line in "${found_files[@]}"; do
-        echo "$line"
-    done) | sort -t'|' -k2,2nr | head -n 20 | while IFS='|' read -r atime size path; do
+    { [[ ${#found_files[@]} -gt 0 ]] && printf '%s\n' "${found_files[@]}"; } | sort -t'|' -k2,2nr | head -n 20 | while IFS='|' read -r atime size path; do
         # Format the date and size for display
         last_access_date=$(date -d "@$atime" '+%Y-%m-%d %H:%M:%S')
         human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8s" "$size")
@@ -207,9 +205,7 @@ scan_apt_packages() {
     echo "--------------------------------------------------------------------------------"
 
     # Sort by size (field 2) descending and print
-    (for line in "${package_details[@]}"; do
-        echo "$line"
-    done) | sort -t'|' -k2,2nr | while IFS='|' read -r pkg size desc; do
+    { [[ ${#package_details[@]} -gt 0 ]] && printf '%s\n' "${package_details[@]}"; } | sort -t'|' -k2,2nr | while IFS='|' read -r pkg size desc; do
         human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8s" "$size")
         printf "%-30s | %-12s | %s\n" "$pkg" "$human_readable_size" "$desc"
     done
