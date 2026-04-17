@@ -30,7 +30,7 @@ process_login() {
         home_dir=$(getent passwd "$user" | cut -d: -f6)
         history_file="$home_dir/.bash_history"
         if [ -f "$history_file" ]; then
-            grep -E -i '^(vi|nano|cat|less|more|tail|head|touch|rm|cp|mv|mkdir|rmdir|cd) ' "$history_file" | while read -r command; do
+            grep -Ei '^(vi|nano|cat|less|more|tail|head|touch|rm|cp|mv|mkdir|rmdir|cd) ' "$history_file" | while read -r command; do
                 echo "|-- $command"
             done
         fi

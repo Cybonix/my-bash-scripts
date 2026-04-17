@@ -28,9 +28,10 @@ two(){
         # Adds a user to Linux system as admin, including password
         # Am I a Root user?
         if [[ $(id -u) -eq 0 ]]; then
-                read -r -p "Enter username : " username
-                read -r -s -p "Enter password : " password
-                if grep -E "^$username" /etc/passwd >/dev/null; then
+                read -p "Enter username : " username
+                read -s -p "Enter password : " password
+                grep -E "^$username" /etc/passwd >/dev/null
+                if [[ $? -eq 0 ]]; then
                         clear
                         echo -e "${RED}$username already exist!${STD}" && sleep 2
                         pause
@@ -55,8 +56,9 @@ two(){
 # function to remove admin accounts
 three(){
         if [[ $(id -u) -eq 0 ]]; then
-                read -r -p "Enter username : " username
-                if ! grep -E "^$username" /etc/passwd >/dev/null; then
+                read -p "Enter username : " username
+                grep -E "^$username" /etc/passwd >/dev/null
+                if [[ $? -ne 0 ]]; then
                         clear
                         echo -e "${RED}$username does not exist!${STD}" && sleep 2
                         pause
