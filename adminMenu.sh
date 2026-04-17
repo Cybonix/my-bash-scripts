@@ -30,7 +30,7 @@ two(){
         if [[ $(id -u) -eq 0 ]]; then
                 read -p "Enter username : " username
                 read -s -p "Enter password : " password
-                egrep "^$username" /etc/passwd >/dev/null
+                grep -E "^$username" /etc/passwd >/dev/null
                 if [[ $? -eq 0 ]]; then
                         clear
                         echo -e "${RED}$username already exist!${STD}" && sleep 2
@@ -53,7 +53,7 @@ two(){
 three(){
         if [[ $(id -u) -eq 0 ]]; then
                 read -p "Enter username : " username
-                egrep "^$username" /etc/passwd >/dev/null
+                grep -E "^$username" /etc/passwd >/dev/null
                 if [[ $? -ne 0 ]]; then
                         clear
                         echo -e "${RED}$username does not exist!${STD}" && sleep 2
