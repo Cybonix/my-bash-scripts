@@ -145,7 +145,7 @@ generate_removal_script() {
     # Calculate total size in a simple loop to avoid complex parsing in the pipeline
     for line in "${files_to_process[@]}"; do
         IFS='|' read -r _ size path <<< "$line"
-        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")" >> "$script_path"
+        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B --format="%f" "$size")" >> "$script_path"
         total_size=$((total_size + size))
     done
 
@@ -371,22 +371,24 @@ generate_app_removal_script() {
         echo ""
     } > "$script_path"
 
+    # Escape package names to prevent command injection
+    local escaped_packages=()
+    for pkg in "${packages_to_remove[@]}"; do
+        escaped_packages+=("$(printf '%q' "$pkg")")
+    done
+
     case "$type" in
         apt)
-            printf "sudo apt-get purge" >> "$script_path"
-            printf " %q" "${packages_to_remove[@]}" >> "$script_path"
-            echo "" >> "$script_path"
+            echo "sudo apt-get purge ${escaped_packages[*]}" >> "$script_path"
             echo "sudo apt-get autoremove" >> "$script_path"
             ;;
         snap)
-            for pkg in "${packages_to_remove[@]}"; do
-                printf "sudo snap remove %q\n" "$pkg" >> "$script_path"
+            for pkg in "${escaped_packages[@]}"; do
+                echo "sudo snap remove $pkg" >> "$script_path"
             done
             ;;
         flatpak)
-            printf "flatpak uninstall --delete-data" >> "$script_path"
-            printf " %q" "${packages_to_remove[@]}" >> "$script_path"
-            echo "" >> "$script_path"
+            echo "flatpak uninstall --delete-data ${escaped_packages[*]}" >> "$script_path"
             ;;
     esac
 
