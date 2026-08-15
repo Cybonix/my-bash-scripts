@@ -2,11 +2,25 @@
 # Purpose - This custom bash script backs up files in a giving folder, and could be used to automate backups.
 # Modified by - Joseph Mark Orimoloye <cybonix@gmail.com>
 
-# Files or Folders to backup.
-backup_files="/home/cybonix/my-bash-scripts"
+# Default to environment variables or arguments, fallback to reasonable defaults
+backup_files="${1:-${BACKUP_SOURCE:-}}"
+dest="${2:-${BACKUP_DEST:-}}"
 
-# Destination of backup.
-dest="/home/cybonix"
+if [[ -z "$backup_files" || -z "$dest" ]]; then
+	echo "Usage: $0 <source_file_or_directory> <destination_directory>" >&2
+	echo "Or set BACKUP_SOURCE and BACKUP_DEST environment variables." >&2
+	exit 1
+fi
+
+if [[ ! -e "$backup_files" ]]; then
+	echo "Error: Source '$backup_files' does not exist." >&2
+	exit 1
+fi
+
+if [[ ! -d "$dest" ]]; then
+	echo "Error: Destination directory '$dest' does not exist." >&2
+	exit 1
+fi
 
 # Create archive filename.
 day=$(date "+%Y-%m-%d.%H%M")
@@ -19,11 +33,14 @@ date
 echo
 
 # Backup the files using tar.
-tar czf "$dest/$archive_file" "$backup_files"
+if tar czf "$dest/$archive_file" "$backup_files"; then
+	# Print end status message.
+	echo "Backup Finished with status 0"
+	date
 
-# Print end status message.
-echo "Backup Finished with status $?"
-date
-
-# Long listing of files in $dest to check file sizes.
-ls -lh "$dest"
+	# Long listing of files in $dest to check file sizes.
+	ls -lh "$dest/$archive_file"
+else
+	echo "Backup failed!" >&2
+	exit 1
+fi
