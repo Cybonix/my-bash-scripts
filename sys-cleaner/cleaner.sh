@@ -135,7 +135,7 @@ generate_removal_script() {
     total_size=0
     for line in "${files_to_process[@]}"; do
         IFS='|' read -r _ size path <<< "$line"
-        echo "rm -v \"$path\" # Size: $(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")" >> "$script_path"
+        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")" >> "$script_path"
         total_size=$((total_size + size))
     done
 
@@ -363,16 +363,20 @@ generate_app_removal_script() {
 
     case "$type" in
         apt)
-            echo "sudo apt-get purge ${packages_to_remove[*]}" >> "$script_path"
+            printf "sudo apt-get purge" >> "$script_path"
+            printf " %q" "${packages_to_remove[@]}" >> "$script_path"
+            echo "" >> "$script_path"
             echo "sudo apt-get autoremove" >> "$script_path"
             ;;
         snap)
             for pkg in "${packages_to_remove[@]}"; do
-                echo "sudo snap remove \"$pkg\"" >> "$script_path"
+                printf "sudo snap remove %q\n" "$pkg" >> "$script_path"
             done
             ;;
         flatpak)
-            echo "flatpak uninstall --delete-data ${packages_to_remove[*]}" >> "$script_path"
+            printf "flatpak uninstall --delete-data" >> "$script_path"
+            printf " %q" "${packages_to_remove[@]}" >> "$script_path"
+            echo "" >> "$script_path"
             ;;
     esac
 
