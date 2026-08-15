@@ -40,9 +40,78 @@ test_scan_for_old_files_invalid_path() {
     fi
 }
 
+test_generate_removal_script() {
+    echo "Testing generate_removal_script..."
+    local local_failed=0
+
+    # Mock date to have a predictable filename
+    date() {
+        if [[ "$*" == "+%Y%m%d_%H%M%S" ]]; then
+            echo "20231027_120000"
+        else
+            command date "$@"
+        fi
+    }
+    export -f date
+
+    local expected_script="./remove_old_files_20231027_120000.sh"
+    rm -f "$expected_script"
+
+    local test_files=(
+        "1698408000|1024|/tmp/testfile1.txt"
+        "1698408000|2048|/tmp/testfile 2.txt"
+    )
+
+    generate_removal_script "${test_files[@]}" > /dev/null
+
+    if [[ ! -f "$expected_script" ]]; then
+        echo "❌ FAILED: Removal script not generated."
+        unset -f date
+        return 1
+    fi
+
+    # Check contents
+    if ! grep -q "#!/bin/bash" "$expected_script"; then
+        echo "❌ FAILED: Shebang missing."
+        local_failed=1
+    fi
+
+    if ! grep -q "rm -v \"/tmp/testfile1.txt\"" "$expected_script"; then
+        echo "❌ FAILED: Command for testfile1.txt missing or incorrect."
+        local_failed=1
+    fi
+
+    if ! grep -q "rm -v \"/tmp/testfile 2.txt\"" "$expected_script"; then
+        echo "❌ FAILED: Command for testfile 2.txt missing or incorrect (check quoting)."
+        local_failed=1
+    fi
+
+    if ! grep -q "Total size of files to be removed: " "$expected_script"; then
+        echo "❌ FAILED: Total size summary missing."
+        local_failed=1
+    fi
+
+    # Verify that numfmt didn't fail (the script should contain the expected size)
+    if ! grep -q "Size: 1.0KiB" "$expected_script"; then
+        echo "❌ FAILED: Expected size '1.0KiB' not found in script."
+        local_failed=1
+    fi
+
+    rm -f "$expected_script"
+    unset -f date
+
+    if [[ $local_failed -eq 1 ]]; then
+        return 1
+    else
+        echo "✅ PASSED"
+        return 0
+    fi
+}
+
 # Run tests
 failed=0
 test_scan_for_old_files_invalid_path || failed=1
+test_generate_removal_script || failed=1
 
 if [ $failed -eq 0 ]; then
     echo "All tests passed!"
