@@ -97,7 +97,7 @@ scan_for_old_files() {
     { [[ ${#found_files[@]} -gt 0 ]] && printf '%s\n' "${found_files[@]}"; } | sort -t'|' -k2,2nr | head -n 20 | while IFS='|' read -r atime size path; do
         # Format the date and size for display
         last_access_date=$(date -d "@$atime" '+%Y-%m-%d %H:%M:%S')
-        human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")
+        human_readable_size=$(numfmt --to=iec-i --suffix=B "$size")
         printf "%-20s | %-12s | %s\n" "$last_access_date" "$human_readable_size" "$path"
     done
 
@@ -145,7 +145,7 @@ generate_removal_script() {
     # Calculate total size in a simple loop to avoid complex parsing in the pipeline
     for line in "${files_to_process[@]}"; do
         IFS='|' read -r _ size path <<< "$line"
-        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B --format="%f" "$size")" >> "$script_path"
+        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B "$size")" >> "$script_path"
         total_size=$((total_size + size))
     done
 
@@ -222,7 +222,7 @@ scan_apt_packages() {
 
     # Sort by size (field 2) descending and print
     { [[ ${#package_details[@]} -gt 0 ]] && printf '%s\n' "${package_details[@]}"; } | sort -t'|' -k2,2nr | while IFS='|' read -r pkg size desc; do
-        human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")
+        human_readable_size=$(numfmt --to=iec-i --suffix=B "$size")
         printf "%-30s | %-12s | %s\n" "$pkg" "$human_readable_size" "$desc"
     done
 
@@ -326,7 +326,7 @@ generate_app_removal_script() {
             local display_name="$name"
             local display_info=""
             if [[ "$type" == "apt" ]]; then
-                human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size_or_notes")
+                human_readable_size=$(numfmt --to=iec-i --suffix=B "$size_or_notes")
                 display_info="$human_readable_size - $desc"
             elif [[ "$type" == "snap" ]]; then
                 display_info="Size: $size_or_notes"
@@ -379,16 +379,24 @@ generate_app_removal_script() {
 
     case "$type" in
         apt)
-            echo "sudo apt-get purge ${escaped_packages[*]}" >> "$script_path"
+            printf "sudo apt-get purge" >> "$script_path"
+            for pkg in "${packages_to_remove[@]}"; do
+                printf " %q" "$pkg" >> "$script_path"
+            done
+            echo "" >> "$script_path"
             echo "sudo apt-get autoremove" >> "$script_path"
             ;;
         snap)
-            for pkg in "${escaped_packages[@]}"; do
-                echo "sudo snap remove $pkg" >> "$script_path"
+            for pkg in "${packages_to_remove[@]}"; do
+                printf "sudo snap remove %q\n" "$pkg" >> "$script_path"
             done
             ;;
         flatpak)
-            echo "flatpak uninstall --delete-data ${escaped_packages[*]}" >> "$script_path"
+            printf "flatpak uninstall --delete-data" >> "$script_path"
+            for pkg in "${packages_to_remove[@]}"; do
+                printf " %q" "$pkg" >> "$script_path"
+            done
+            echo "" >> "$script_path"
             ;;
     esac
 
