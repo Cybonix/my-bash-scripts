@@ -133,6 +133,16 @@ generate_removal_script() {
     } > "$script_path"
 
     total_size=0
+    # Generate removal commands using a pipeline to avoid forking for every file.
+    {
+        if [[ ${#files_to_process[@]} -gt 0 ]]; then
+            printf '%s\n' "${files_to_process[@]}" | cut -d'|' -f2- | \
+                numfmt --to=iec-i --suffix=B --padding=8 --field=1 --delimiter='|' | \
+                sed 's/^\([^|]*\)|\(.*\)$/rm -v "\2" # Size: \1/'
+        fi
+    } >> "$script_path"
+
+    # Calculate total size in a simple loop to avoid complex parsing in the pipeline
     for line in "${files_to_process[@]}"; do
         IFS='|' read -r _ size path <<< "$line"
         printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")" >> "$script_path"
