@@ -70,7 +70,11 @@ scan_for_old_files() {
 
     # The first element of exclude_args is '-o', which we don't want at the start of the expression
     # We remove it. The find expression will start with `\( -path ...`
-    unset 'exclude_args[0]'
+    if [[ ${#exclude_args[@]} -gt 0 ]]; then
+        unset 'exclude_args[0]'
+    else
+        exclude_args=(-false)
+    fi
 
     # Find files and store them in an array
     # We use `printf` for better control over the output format
@@ -93,7 +97,7 @@ scan_for_old_files() {
     { [[ ${#found_files[@]} -gt 0 ]] && printf '%s\n' "${found_files[@]}"; } | sort -t'|' -k2,2nr | head -n 20 | while IFS='|' read -r atime size path; do
         # Format the date and size for display
         last_access_date=$(date -d "@$atime" '+%Y-%m-%d %H:%M:%S')
-        human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8s" "$size")
+        human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")
         printf "%-20s | %-12s | %s\n" "$last_access_date" "$human_readable_size" "$path"
     done
 
@@ -129,9 +133,19 @@ generate_removal_script() {
     } > "$script_path"
 
     total_size=0
+    # Generate removal commands using a pipeline to avoid forking for every file.
+    {
+        if [[ ${#files_to_process[@]} -gt 0 ]]; then
+            printf '%s\n' "${files_to_process[@]}" | cut -d'|' -f2- | \
+                numfmt --to=iec-i --suffix=B --padding=8 --field=1 --delimiter='|' | \
+                sed 's/^\([^|]*\)|\(.*\)$/rm -v "\2" # Size: \1/'
+        fi
+    } >> "$script_path"
+
+    # Calculate total size in a simple loop to avoid complex parsing in the pipeline
     for line in "${files_to_process[@]}"; do
         IFS='|' read -r _ size path <<< "$line"
-        echo "rm -v \"$path\" # Size: $(numfmt --to=iec-i --suffix=B --format="%-8s" "$size")" >> "$script_path"
+        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B --format="%f" "$size")" >> "$script_path"
         total_size=$((total_size + size))
     done
 
@@ -208,7 +222,7 @@ scan_apt_packages() {
 
     # Sort by size (field 2) descending and print
     { [[ ${#package_details[@]} -gt 0 ]] && printf '%s\n' "${package_details[@]}"; } | sort -t'|' -k2,2nr | while IFS='|' read -r pkg size desc; do
-        human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8s" "$size")
+        human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size")
         printf "%-30s | %-12s | %s\n" "$pkg" "$human_readable_size" "$desc"
     done
 
@@ -312,7 +326,7 @@ generate_app_removal_script() {
             local display_name="$name"
             local display_info=""
             if [[ "$type" == "apt" ]]; then
-                human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8s" "$size_or_notes")
+                human_readable_size=$(numfmt --to=iec-i --suffix=B --format="%-8f" "$size_or_notes")
                 display_info="$human_readable_size - $desc"
             elif [[ "$type" == "snap" ]]; then
                 display_info="Size: $size_or_notes"
@@ -329,6 +343,7 @@ generate_app_removal_script() {
 
         # The output from dialog is quoted, so we need to handle that
         # e.g., "package1" "package2"
+        selected_packages=$(echo "$selected_packages" | tr -d '"')
         read -ra packages_to_remove <<< "$selected_packages"
 
     else
@@ -356,18 +371,24 @@ generate_app_removal_script() {
         echo ""
     } > "$script_path"
 
+    # Escape package names to prevent command injection
+    local escaped_packages=()
+    for pkg in "${packages_to_remove[@]}"; do
+        escaped_packages+=("$(printf '%q' "$pkg")")
+    done
+
     case "$type" in
         apt)
-            echo "sudo apt-get purge ${packages_to_remove[*]}" >> "$script_path"
+            echo "sudo apt-get purge ${escaped_packages[*]}" >> "$script_path"
             echo "sudo apt-get autoremove" >> "$script_path"
             ;;
         snap)
-            for pkg in "${packages_to_remove[@]}"; do
-                echo "sudo snap remove \"$pkg\"" >> "$script_path"
+            for pkg in "${escaped_packages[@]}"; do
+                echo "sudo snap remove $pkg" >> "$script_path"
             done
             ;;
         flatpak)
-            echo "flatpak uninstall --delete-data ${packages_to_remove[*]}" >> "$script_path"
+            echo "flatpak uninstall --delete-data ${escaped_packages[*]}" >> "$script_path"
             ;;
     esac
 
