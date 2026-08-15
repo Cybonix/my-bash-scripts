@@ -70,7 +70,11 @@ scan_for_old_files() {
 
     # The first element of exclude_args is '-o', which we don't want at the start of the expression
     # We remove it. The find expression will start with `\( -path ...`
-    unset 'exclude_args[0]'
+    if [[ ${#exclude_args[@]} -gt 0 ]]; then
+        unset 'exclude_args[0]'
+    else
+        exclude_args=(-false)
+    fi
 
     # Find files and store them in an array
     # We use `printf` for better control over the output format
@@ -329,6 +333,7 @@ generate_app_removal_script() {
 
         # The output from dialog is quoted, so we need to handle that
         # e.g., "package1" "package2"
+        selected_packages=$(echo "$selected_packages" | tr -d '"')
         read -ra packages_to_remove <<< "$selected_packages"
 
     else

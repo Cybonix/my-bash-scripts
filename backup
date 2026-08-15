@@ -2,11 +2,26 @@
 # Purpose - A simple Bash function that backs up files according to a standardized naming convention.
 # Modified by - Joseph Mark Orimoloye <cybonix@gmail.com>
 
-# This function is not working...  I need to troubleshoot it.
+# This function is now fixed and follows best practices.
 function backup () {
-	date_stamp=$(date "+%Y-%m-%d.%H%M.bak");
-	newname=$1.$date_stamp;
-	mv "$1.$date_stamp" "$newname";
-	echo "Backed up $1.$date_stamp to $newname.";
-	cp -p "$newname" "$1.$date_stamp";
+	if [[ -z "$1" ]]; then
+		echo "Usage: backup <filename>"
+		return 1
+	fi
+
+	if [[ ! -f "$1" ]]; then
+		echo "Error: File '$1' not found."
+		return 1
+	fi
+
+	local date_stamp
+	date_stamp=$(date "+%Y-%m-%d.%H%M.bak")
+	local newname="$1.$date_stamp"
+
+	if cp -p "$1" "$newname"; then
+		echo "Backed up $1 to $newname."
+	else
+		echo "Failed to backup $1."
+		return 1
+	fi
 }
