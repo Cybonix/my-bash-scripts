@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint-and-test:
+    name: ShellCheck & Bats Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          shellcheck adminMenu.sh backup backup.sh wdw.sh sys-cleaner/cleaner.sh sys-cleaner/tests/test_cleaner.sh
+
+      - name: Run Bats test suite
+        run: |
+          bats test_*.bats
+
+      - name: Run sys-cleaner test script
+        run: |
+          bash sys-cleaner/tests/test_cleaner.sh

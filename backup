@@ -15,6 +15,14 @@ function backup () {
 	local date_stamp
 	date_stamp=$(date "+%Y-%m-%d.%H%M.bak")
 	local newname="$1.$date_stamp"
-	cp -p "$1" "$newname"
-	echo "Backed up $1 to $newname."
+	if cp -p "$1" "$newname"; then
+		echo "Backed up $1 to $newname."
+	else
+		echo "Error: Failed to back up '$1'." >&2
+		return 1
+	fi
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	backup "$@"
+fi

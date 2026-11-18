@@ -46,6 +46,11 @@ scan_for_old_files() {
     read -r -p "Enter the number of days to consider a file 'old' [Default: $DEFAULT_DAYS_OLD]: " days_old
     days_old=${days_old:-$DEFAULT_DAYS_OLD}
 
+    if ! [[ "$days_old" =~ ^[0-9]+$ ]]; then
+        error "Invalid number of days: '$days_old'. Must be a non-negative integer."
+        return 1
+    fi
+
     read -r -p "Enter the absolute path to scan [Default: $DEFAULT_SCAN_PATH]: " scan_path
     scan_path=${scan_path:-$DEFAULT_SCAN_PATH}
 
@@ -63,9 +68,12 @@ scan_for_old_files() {
     exclude_args=()
     IFS=',' read -ra exclude_arr <<< "$excludes"
     for item in "${exclude_arr[@]}"; do
-        # We need to exclude the path, so we use -path and add a wildcard
-        # e.g., /home/user/.cache/*
-        exclude_args+=(-o -path "$scan_path/$item/*")
+        # Trim leading/trailing whitespace
+        item="${item#"${item%%[![:space:]]*}"}"
+        item="${item%"${item##*[![:space:]]}"}"
+        [[ -z "$item" ]] && continue
+        # Exclude both the directory itself and its contents
+        exclude_args+=(-o -path "$scan_path/$item" -o -path "$scan_path/$item/*")
     done
 
     # The first element of exclude_args is '-o', which we don't want at the start of the expression
@@ -132,17 +140,9 @@ generate_removal_script() {
         echo ""
     } > "$script_path"
 
-    total_size=0
-    # Generate removal commands using a pipeline to avoid forking for every file.
-    {
-        if [[ ${#files_to_process[@]} -gt 0 ]]; then
-            printf '%s\n' "${files_to_process[@]}" | cut -d'|' -f2- | \
-                numfmt --to=iec-i --suffix=B --padding=8 --field=1 --delimiter='|' | \
-                sed 's/^\([^|]*\)|\(.*\)$/rm -v "\2" # Size: \1/'
-        fi
-    } >> "$script_path"
-
-    # Calculate total size in a simple loop to avoid complex parsing in the pipeline
+    local total_size=0
+    local line size path
+    # Generate safely escaped removal commands and calculate total size
     for line in "${files_to_process[@]}"; do
         IFS='|' read -r _ size path <<< "$line"
         printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B "$size")" >> "$script_path"
@@ -370,12 +370,6 @@ generate_app_removal_script() {
         echo "# Review these commands carefully before running this script."
         echo ""
     } > "$script_path"
-
-    # Escape package names to prevent command injection
-    local escaped_packages=()
-    for pkg in "${packages_to_remove[@]}"; do
-        escaped_packages+=("$(printf '%q' "$pkg")")
-    done
 
     case "$type" in
         apt)

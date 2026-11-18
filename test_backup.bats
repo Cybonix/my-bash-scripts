@@ -35,6 +35,19 @@ teardown() {
   [[ "$output" == *"does not exist"* ]]
 }
 
+@test "backup function fails when no argument is provided" {
+  source backup
+  run backup
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Usage: backup <file>"* ]]
+}
+
+@test "backup script can be executed directly" {
+  run bash backup "$TEST_FILE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Backed up $TEST_FILE to"* ]]
+}
+
 @test "backup.sh correctly creates tarball" {
   export BACKUP_SOURCE="$TEST_FILE"
   export BACKUP_DEST="$TEST_DIR"
