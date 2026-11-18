@@ -21,7 +21,7 @@ jobs:
 
       - name: Run ShellCheck
         run: |
-          shellcheck adminMenu.sh backup backup.sh wdw.sh sys-cleaner/cleaner.sh sys-cleaner/tests/test_cleaner.sh
+          shellcheck adminMenu.sh backup.sh wdw.sh sys-cleaner/cleaner.sh sys-cleaner/tests/test_cleaner.sh
 
       - name: Run Bats test suite
         run: |

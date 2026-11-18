@@ -21,39 +21,31 @@ chmod +x adminMenu.sh
 sudo ./adminMenu.sh
 ```
 
-### `backup`
-
-A lightweight Bash function (and standalone script) that backs up individual files in-place with a standardized timestamp suffix (`<filename>.YYYY-MM-DD.HHMM.bak`) while preserving file attributes.
-
-**Usage:**
-Source it in your shell or `.bashrc`:
-```bash
-source ./backup
-backup /path/to/file.conf
-```
-Or execute it directly:
-```bash
-./backup /path/to/file.conf
-```
-
 ### `backup.sh`
 
-A script to create a compressed `.tar.gz` archive of a specified file or directory.
+A unified backup script and shell function that supports both quick in-place file backups and compressed `.tar.gz` archive backups.
 
 **Features:**
-- Backs up a file or directory to a `.tar.gz` archive named `<hostname>-YYYY-MM-DD.HHMM.tar.gz`.
-- Accepts command-line arguments or `BACKUP_SOURCE` and `BACKUP_DEST` environment variables.
-- Validates source and destination paths before archiving.
+- **In-Place File Backup:** When given only a source file, creates a timestamped copy in the same directory (`<filename>.YYYY-MM-DD.HHMM.bak`) while preserving file attributes (`cp -p`).
+- **Tarball Archive Backup:** When given both a source file/directory and a destination directory, creates a compressed archive named `<hostname>-YYYY-MM-DD.HHMM.tar.gz` inside the destination directory.
+- **Flexible Invocation:** Can be executed directly as `./backup.sh`, sourced in your shell (`source ./backup.sh && backup ...`), or configured via `BACKUP_SOURCE` and `BACKUP_DEST` environment variables.
 
 **Usage:**
-Pass the source and destination paths as arguments:
 ```bash
 chmod +x backup.sh
+
+# 1. In-place file backup (<file>.YYYY-MM-DD.HHMM.bak)
+./backup.sh /path/to/file.conf
+
+# 2. Compressed tarball archive in a destination directory
 ./backup.sh /path/to/source /path/to/destination_dir
-```
-Or configure via environment variables:
-```bash
+
+# 3. Using environment variables
 BACKUP_SOURCE=/path/to/source BACKUP_DEST=/path/to/destination_dir ./backup.sh
+
+# 4. Sourced as a shell function
+source ./backup.sh
+backup /path/to/file.conf
 ```
 
 ### `wdw.sh` ("Who's Doing What")
@@ -97,7 +89,7 @@ This repository uses [Bats (Bash Automated Testing System)](https://github.com/b
 Run all tests and checks locally:
 ```bash
 # Run ShellCheck
-shellcheck adminMenu.sh backup backup.sh wdw.sh sys-cleaner/cleaner.sh sys-cleaner/tests/test_cleaner.sh
+shellcheck adminMenu.sh backup.sh wdw.sh sys-cleaner/cleaner.sh sys-cleaner/tests/test_cleaner.sh
 
 # Run Bats test suites
 bats test_*.bats
