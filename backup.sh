@@ -1,7 +1,7 @@
 #!/bin/bash
 # Purpose - A unified backup script/function that supports both in-place file backups
-#           (<file>.YYYY-MM-DD.HHMM.bak) and compressed tarball backups (<hostname>-YYYY-MM-DD.HHMM.tar.gz)
-#           when a destination directory is specified.
+#           (<file>.YYYY-MM-DD.HHMMSS.bak) and compressed tarball backups
+#           (<hostname>-<source>-YYYY-MM-DD.HHMMSS.tar.gz) when a destination directory is specified.
 # Modified by - Joseph Mark Orimoloye <cybonix@gmail.com>
 
 backup() {
@@ -28,13 +28,17 @@ backup() {
 			return 1
 		fi
 		local date_stamp
-		date_stamp=$(date "+%Y-%m-%d.%H%M.bak")
+		date_stamp=$(date "+%Y-%m-%d.%H%M%S.bak")
 		# Avoid double .bak if date_stamp already ends with .bak (e.g. from custom date format/mock)
 		if [[ "$date_stamp" != *.bak ]]; then
 			date_stamp="${date_stamp}.bak"
 		fi
 		local newname="${backup_files}.${date_stamp}"
-		if cp -p "$backup_files" "$newname"; then
+		if [[ -e "$newname" ]]; then
+			echo "Error: Backup target '$newname' already exists." >&2
+			return 1
+		fi
+		if cp -p -- "$backup_files" "$newname"; then
 			echo "Backed up $backup_files to $newname."
 			return 0
 		else
@@ -49,24 +53,45 @@ backup() {
 		return 1
 	fi
 
-	local day hostname archive_file
-	day=$(date "+%Y-%m-%d.%H%M")
+	local src_real dest_real
+	src_real=$(realpath -- "$backup_files") || return 1
+	dest_real=$(realpath -- "$dest") || return 1
+
+	# Prevent recursive self-inclusion when archiving a directory into itself or a subdirectory
+	if [[ -d "$src_real" ]]; then
+		if [[ "$src_real" == "/" || "$dest_real" == "$src_real" || "$dest_real" == "$src_real/"* ]]; then
+			echo "Error: Destination directory '$dest' cannot be inside source directory '$backup_files'." >&2
+			return 1
+		fi
+	fi
+
+	local day hostname source_name src_parent archive_file archive_path
+	day=$(date "+%Y-%m-%d.%H%M%S")
 	hostname=$(hostname -s)
-	archive_file="$hostname-$day.tar.gz"
+	source_name=$(basename -- "$src_real")
+	src_parent=$(dirname -- "$src_real")
+	archive_file="${hostname}-${source_name}-${day}.tar.gz"
+	archive_path="${dest_real}/${archive_file}"
+
+	if [[ -e "$archive_path" ]]; then
+		echo "Error: Backup archive '$archive_path' already exists." >&2
+		return 1
+	fi
 
 	# Print start status message.
-	echo "Backing up $backup_files to $dest/$archive_file"
+	echo "Backing up $backup_files to $archive_path"
 	date
 	echo
 
-	# Backup the files using tar.
-	if tar czf "$dest/$archive_file" "$backup_files"; then
+	# Backup the files using tar relative to source parent to avoid leading '/' warnings
+	# and safely handle names starting with '-'.
+	if tar -czf "$archive_path" -C "$src_parent" -- "$source_name"; then
 		# Print end status message.
 		echo "Backup Finished with status 0"
 		date
 
-		# Long listing of files in $dest to check file sizes.
-		ls -lh "$dest/$archive_file"
+		# Long listing of archive to check file size.
+		ls -lh -- "$archive_path"
 	else
 		echo "Backup failed!" >&2
 		return 1

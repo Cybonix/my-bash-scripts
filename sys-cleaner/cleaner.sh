@@ -2,7 +2,7 @@
 
 # System Cleaner Script
 #
-# A script to help identify unused files and applications on Ubuntu.
+# A script to help identify unused files and applications on Ubuntu/Debian.
 #
 # Warning: This script is a powerful tool. It does not delete anything
 # automatically, but helps you generate scripts to do so. Always
@@ -42,6 +42,7 @@ error() {
 
 scan_for_old_files() {
     info "This utility will scan for files that have not been accessed recently."
+    warn "Note: Access time (-atime) accuracy depends on filesystem mount options (e.g., relatime/noatime)."
 
     read -r -p "Enter the number of days to consider a file 'old' [Default: $DEFAULT_DAYS_OLD]: " days_old
     days_old=${days_old:-$DEFAULT_DAYS_OLD}
@@ -62,32 +63,46 @@ scan_for_old_files() {
         return 1
     fi
 
+    # Normalize to an absolute path without trailing slash (preserving '/')
+    scan_path=$(cd -- "$scan_path" && pwd)
+    if [[ "$scan_path" != "/" ]]; then
+        scan_path="${scan_path%/}"
+    fi
+
     info "Scanning for files in '$scan_path' not accessed in the last $days_old days..."
 
     # Build the find command's exclude arguments
-    exclude_args=()
+    local exclude_args=()
+    local exclude_arr=()
+    local item
     IFS=',' read -ra exclude_arr <<< "$excludes"
     for item in "${exclude_arr[@]}"; do
-        # Trim leading/trailing whitespace
+        # Trim leading/trailing whitespace and slashes
         item="${item#"${item%%[![:space:]]*}"}"
         item="${item%"${item##*[![:space:]]}"}"
+        item="${item#/}"
+        item="${item%/}"
         [[ -z "$item" ]] && continue
-        # Exclude both the directory itself and its contents
-        exclude_args+=(-o -path "$scan_path/$item" -o -path "$scan_path/$item/*")
+        if [[ "$item" == */* ]]; then
+            # Relative subpath under scan_path (e.g., .local/share/Trash)
+            exclude_args+=(-o -path "$scan_path/$item" -o -path "$scan_path/$item/*")
+        else
+            # Bare directory name (e.g., .git, .cache) matched at any depth
+            exclude_args+=(-o -name "$item")
+        fi
     done
 
     # The first element of exclude_args is '-o', which we don't want at the start of the expression
-    # We remove it. The find expression will start with `\( -path ...`
     if [[ ${#exclude_args[@]} -gt 0 ]]; then
         unset 'exclude_args[0]'
     else
         exclude_args=(-false)
     fi
 
-    # Find files and store them in an array
-    # We use `printf` for better control over the output format
-    # Format:epoch_atime|size_bytes|path
-    mapfile -t found_files < <(find "$scan_path" \( "${exclude_args[@]}" \) -prune -o -type f -atime +"$days_old" -printf "%A@|%s|%p\n" 2>/dev/null | sort -n)
+    # Find files using NUL-delimited records so filenames with newlines/spaces/pipes are safe.
+    # Format: epoch_atime|size_bytes|path\0
+    local found_files=()
+    mapfile -d '' -t found_files < <(find "$scan_path" \( "${exclude_args[@]}" \) -prune -o -type f -atime +"$days_old" -printf "%A@|%s|%p\0" 2>/dev/null | sort -z -n)
 
     if [[ ${#found_files[@]} -eq 0 ]]; then
         info "No files found matching the criteria."
@@ -96,14 +111,12 @@ scan_for_old_files() {
 
     info "Found ${#found_files[@]} old files. Displaying the top 20 largest."
     echo "----------------------------------------------------------------"
-    # Display header
     printf "%-20s | %-12s | %s\n" "Last Accessed" "Size" "Path"
     echo "----------------------------------------------------------------"
 
     # Sort by size (field 2) descending and take top 20
-    # Then print
-    { [[ ${#found_files[@]} -gt 0 ]] && printf '%s\n' "${found_files[@]}"; } | sort -t'|' -k2,2nr | head -n 20 | while IFS='|' read -r atime size path; do
-        # Format the date and size for display
+    printf '%s\0' "${found_files[@]}" | sort -z -t'|' -k2,2nr | head -z -n 20 | while IFS='|' read -r -d '' atime size path; do
+        local last_access_date human_readable_size
         last_access_date=$(date -d "@$atime" '+%Y-%m-%d %H:%M:%S')
         human_readable_size=$(numfmt --to=iec-i --suffix=B "$size")
         printf "%-20s | %-12s | %s\n" "$last_access_date" "$human_readable_size" "$path"
@@ -144,8 +157,9 @@ generate_removal_script() {
     local line size path
     # Generate safely escaped removal commands and calculate total size
     for line in "${files_to_process[@]}"; do
-        IFS='|' read -r _ size path <<< "$line"
-        printf "rm -v %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B "$size")" >> "$script_path"
+        IFS='|' read -r -d '' _ size path < <(printf '%s\0' "$line")
+        [[ "$size" =~ ^[0-9]+$ ]] || size=0
+        printf "rm -v -- %q # Size: %s\n" "$path" "$(numfmt --to=iec-i --suffix=B "$size")" >> "$script_path"
         total_size=$((total_size + size))
     done
 
@@ -191,10 +205,9 @@ scan_for_applications() {
 
 scan_apt_packages() {
     info "Scanning for manually installed APT packages..."
-
-    # Get manually installed packages, then get their details.
-    # This can be slow, so we should inform the user.
     info "This may take a moment..."
+
+    local packages=()
     mapfile -t packages < <(apt-mark showmanual)
 
     if [[ ${#packages[@]} -eq 0 ]]; then
@@ -202,18 +215,21 @@ scan_apt_packages() {
         return 0
     fi
 
-    declare -a package_details
-    for pkg in "${packages[@]}"; do
-        # Get installed size, description.
-        # The 'Installed-Size' is in KB, so we convert to bytes.
-        details=$(dpkg-query -W -f='${Installed-Size}|${binary:summary}\n' "$pkg" 2>/dev/null)
-        if [[ -n "$details" ]]; then
-            size_kb=$(echo "$details" | cut -d'|' -f1)
-            size_bytes=$((size_kb * 1024))
-            description=$(echo "$details" | cut -d'|' -f2)
-            package_details+=("$pkg|$size_bytes|$description")
-        fi
-    done
+    # Query all manually installed packages in a single batched dpkg-query call
+    local package_details=()
+    local pkg size_kb size_bytes description
+    while IFS='|' read -r pkg size_kb description; do
+        [[ -z "$pkg" ]] && continue
+        size_kb=${size_kb:-0}
+        [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
+        size_bytes=$((size_kb * 1024))
+        package_details+=("$pkg|$size_bytes|$description")
+    done < <(dpkg-query -W -f='${Package}|${Installed-Size}|${binary:summary}\n' "${packages[@]}" 2>/dev/null)
+
+    if [[ ${#package_details[@]} -eq 0 ]]; then
+        info "No manually installed packages found."
+        return 0
+    fi
 
     info "Found ${#package_details[@]} manually installed packages. Displaying them sorted by size."
     echo "--------------------------------------------------------------------------------"
@@ -221,7 +237,8 @@ scan_apt_packages() {
     echo "--------------------------------------------------------------------------------"
 
     # Sort by size (field 2) descending and print
-    { [[ ${#package_details[@]} -gt 0 ]] && printf '%s\n' "${package_details[@]}"; } | sort -t'|' -k2,2nr | while IFS='|' read -r pkg size desc; do
+    printf '%s\n' "${package_details[@]}" | sort -t'|' -k2,2nr | while IFS='|' read -r pkg size desc; do
+        local human_readable_size
         human_readable_size=$(numfmt --to=iec-i --suffix=B "$size")
         printf "%-30s | %-12s | %s\n" "$pkg" "$human_readable_size" "$desc"
     done
@@ -244,8 +261,9 @@ scan_snap_packages() {
     fi
 
     info "Scanning for installed Snap packages..."
-    # Format: Name | Size | Notes
-    mapfile -t snaps < <(snap list | tail -n +2 | awk '{print $1"|"$3"|"$5}')
+    # snap list columns: Name ($1), Version ($2), Rev ($3), Tracking ($4), Publisher ($5), Notes ($6)
+    local snaps=()
+    mapfile -t snaps < <(snap list | tail -n +2 | awk '{print $1"|"$3"|"$5"|"$6}')
 
     if [[ ${#snaps[@]} -eq 0 ]]; then
         info "No Snap packages found."
@@ -254,12 +272,13 @@ scan_snap_packages() {
 
     info "Found ${#snaps[@]} Snap packages."
     echo "--------------------------------------------------------------------------------"
-    printf "%-30s | %-12s | %s\n" "Package" "Size" "Notes"
+    printf "%-30s | %-8s | %-20s | %s\n" "Package" "Rev" "Publisher" "Notes"
     echo "--------------------------------------------------------------------------------"
 
+    local line pkg rev publisher notes
     for line in "${snaps[@]}"; do
-        IFS='|' read -r pkg size notes <<< "$line"
-        printf "%-30s | %-12s | %s\n" "$pkg" "$size" "$notes"
+        IFS='|' read -r pkg rev publisher notes <<< "$line"
+        printf "%-30s | %-8s | %-20s | %s\n" "$pkg" "$rev" "$publisher" "$notes"
     done
     echo "--------------------------------------------------------------------------------"
 
@@ -277,36 +296,33 @@ scan_flatpak_packages() {
         return
     fi
 
-    info "Scanning for installed Flatpak packages..."
-    # Format: Application ID | Size
-    mapfile -t flatpaks < <(flatpak list --columns=application,size)
+    info "Scanning for installed Flatpak applications..."
+    # Format: Application ID <TAB> Size
+    local flatpaks=()
+    mapfile -t flatpaks < <(flatpak list --app --columns=application,size)
 
     if [[ ${#flatpaks[@]} -eq 0 ]]; then
-        info "No Flatpak packages found."
+        info "No Flatpak applications found."
         return 0
     fi
 
-    info "Found ${#flatpaks[@]} Flatpak packages."
+    info "Found ${#flatpaks[@]} Flatpak applications."
     echo "--------------------------------------------------------------------------------"
     printf "%-50s | %s\n" "Application ID" "Size"
     echo "--------------------------------------------------------------------------------"
 
+    local line app_id size
+    local flatpak_details=()
     for line in "${flatpaks[@]}"; do
-        # Flatpak output is tab-separated
-        app_id=$(echo "$line" | awk -F'\t' '{print $1}')
-        size=$(echo "$line" | awk -F'\t' '{print $2}')
+        IFS=$'\t' read -r app_id size <<< "$line"
+        [[ -z "$app_id" ]] && continue
         printf "%-50s | %s\n" "$app_id" "$size"
+        flatpak_details+=("$app_id|$size|")
     done
     echo "--------------------------------------------------------------------------------"
 
     read -r -p "Do you want to generate a removal script for selected packages? [y/N]: " confirm
     if [[ "$confirm" =~ ^[yY]$ ]]; then
-        # We need to re-format the flatpak list to be pipe-delimited for the generic function
-        declare -a flatpak_details
-        for line in "${flatpaks[@]}"; do
-            app_id=$(echo "$line" | awk -F'\t' '{print $1}')
-            flatpak_details+=("$app_id|") # No size or desc needed for removal command
-        done
         generate_app_removal_script "flatpak" "${flatpak_details[@]}"
     else
         info "No action taken."
@@ -321,30 +337,32 @@ generate_app_removal_script() {
 
     if [[ "$USE_DIALOG" -eq 1 ]]; then
         local checklist_options=()
+        local line name col2 col3
         for line in "${packages_to_process[@]}"; do
-            IFS='|' read -r name size_or_notes desc <<< "$line"
+            IFS='|' read -r name col2 col3 _ <<< "$line"
             local display_name="$name"
             local display_info=""
             if [[ "$type" == "apt" ]]; then
-                human_readable_size=$(numfmt --to=iec-i --suffix=B "$size_or_notes")
-                display_info="$human_readable_size - $desc"
+                local human_readable_size
+                human_readable_size=$(numfmt --to=iec-i --suffix=B "$col2")
+                display_info="$human_readable_size - $col3"
             elif [[ "$type" == "snap" ]]; then
-                display_info="Size: $size_or_notes"
+                display_info="Rev: $col2 - Publisher: $col3"
+            elif [[ "$type" == "flatpak" && -n "$col2" ]]; then
+                display_info="Size: $col2"
             fi
             checklist_options+=("$display_name" "$display_info" "off")
         done
 
-        selected_packages=$(dialog --keep-tite --checklist "Select packages to remove (Space to toggle)" 20 100 15 "${checklist_options[@]}" 2>&1 >/dev/tty)
+        local selected_packages
+        selected_packages=$(dialog --keep-tite --separate-output --checklist "Select packages to remove (Space to toggle)" 20 100 15 "${checklist_options[@]}" 2>&1 >/dev/tty)
 
         if [[ -z "$selected_packages" ]]; then
             info "No packages selected. Aborting."
             return
         fi
 
-        # The output from dialog is quoted, so we need to handle that
-        # e.g., "package1" "package2"
-        selected_packages=$(echo "$selected_packages" | tr -d '"')
-        read -ra packages_to_remove <<< "$selected_packages"
+        mapfile -t packages_to_remove <<< "$selected_packages"
 
     else
         info "Please enter the exact names of the packages you want to remove."
@@ -371,9 +389,10 @@ generate_app_removal_script() {
         echo ""
     } > "$script_path"
 
+    local pkg
     case "$type" in
         apt)
-            printf "sudo apt-get purge" >> "$script_path"
+            printf "sudo apt-get purge --" >> "$script_path"
             for pkg in "${packages_to_remove[@]}"; do
                 printf " %q" "$pkg" >> "$script_path"
             done
@@ -382,11 +401,11 @@ generate_app_removal_script() {
             ;;
         snap)
             for pkg in "${packages_to_remove[@]}"; do
-                printf "sudo snap remove %q\n" "$pkg" >> "$script_path"
+                printf "sudo snap remove -- %q\n" "$pkg" >> "$script_path"
             done
             ;;
         flatpak)
-            printf "flatpak uninstall --delete-data" >> "$script_path"
+            printf "flatpak uninstall --delete-data --" >> "$script_path"
             for pkg in "${packages_to_remove[@]}"; do
                 printf " %q" "$pkg" >> "$script_path"
             done
@@ -402,20 +421,21 @@ generate_app_removal_script() {
 
 # --- Main Logic ---
 
-# Check for dialog and set a flag
+# Check for dialog and interactive TTY before enabling TUI mode
 USE_DIALOG=0
-if command -v dialog &> /dev/null; then
+if command -v dialog &> /dev/null && [[ -t 0 && -t 1 ]]; then
     USE_DIALOG=1
 fi
 
 main() {
     if [[ "$USE_DIALOG" -eq 1 ]]; then
-        cmd=(dialog --keep-tite --menu "System Cleaner" 12 50 3)
-        options=(1 "Scan for old files"
-                 2 "Scan for installed applications"
-                 3 "Exit")
+        local cmd=(dialog --keep-tite --menu "System Cleaner" 12 50 3)
+        local options=(1 "Scan for old files"
+                       2 "Scan for installed applications"
+                       3 "Exit")
 
         while true; do
+            local choice
             choice=$("${cmd[@]}" "${options[@]}" 2>&1 >/dev/tty)
 
             case "$choice" in
@@ -438,11 +458,12 @@ main() {
             echo "2. Scan for installed applications"
             echo "3. Exit"
             echo
-            read -r -p "Enter your choice [1-3]: " choice
+            local choice
+            read -r -p "Enter your choice [1-3]: " choice || break
 
             case "$choice" in
-                1) scan_for_old_files; break ;;
-                2) scan_for_applications; break ;;
+                1) scan_for_old_files ;;
+                2) scan_for_applications ;;
                 3) echo "Exiting."; exit 0 ;;
                 *) error "Invalid choice. Please try again." ;;
             esac

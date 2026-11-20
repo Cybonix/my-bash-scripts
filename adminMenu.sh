@@ -15,14 +15,31 @@ pause(){
   read -r -p "Press [Enter] key to continue..." _
 }
 
-# function to list user accounts
+is_valid_username(){
+	[[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
+}
+
+# function to list admin accounts (members of wheel / sudo groups)
 one(){
-	local uid_min uid_max
-	uid_min=$(awk '/^UID_MIN/ {print $2}' /etc/login.defs 2>/dev/null)
-	uid_max=$(awk '/^UID_MAX/ {print $2}' /etc/login.defs 2>/dev/null)
-	uid_min=${uid_min:-1000}
-	uid_max=${uid_max:-60000}
-	getent passwd | awk -F: -v min="$uid_min" -v max="$uid_max" '$3 >= min && $3 <= max {print $1}' && sleep 2
+	local group members found=0
+	local -A seen=()
+	for group in wheel sudo; do
+		members=$(getent group "$group" 2>/dev/null | cut -d: -f4)
+		if [[ -n "$members" ]]; then
+			IFS=',' read -ra user_list <<< "$members"
+			for user in "${user_list[@]}"; do
+				if [[ -n "$user" && -z "${seen[$user]+x}" ]]; then
+					seen["$user"]=1
+					echo "$user ($group)"
+					found=1
+				fi
+			done
+		fi
+	done
+	if [[ "$found" -eq 0 ]]; then
+		echo "No admin accounts found in wheel or sudo groups."
+	fi
+	sleep 2
 	pause
 }
 
@@ -31,7 +48,7 @@ two(){
 	# Adds a user to Linux system as admin, including password
 	# Am I a Root user?
 	if [[ $(id -u) -eq 0 ]]; then
-		local username password pass admin_group="wheel"
+		local username password admin_group=""
 		read -r -p "Enter username : " username
 		read -r -s -p "Enter password : " password
 		echo
@@ -41,47 +58,104 @@ two(){
 			pause
 			return 1
 		fi
-		if grep -qE "^${username}:" /etc/passwd; then
+		if ! is_valid_username "$username"; then
 			clear
-			echo -e "${RED}$username already exist!${STD}" && sleep 2
+			echo -e "${RED}Invalid username '$username'! Use lowercase letters, digits, '_' or '-'.${STD}" && sleep 2
 			pause
-		else
-			pass=$(perl -e 'print crypt($ARGV[0], "password")' "$password")
-			useradd -m -p "$pass" "$username"
-			if ! getent group wheel >/dev/null 2>&1 && getent group sudo >/dev/null 2>&1; then
-				admin_group="sudo"
-			fi
-			if usermod -a -G "$admin_group" "$username"; then
-				clear
-				echo -e "${GREEN}$username has been added to system as admin!${STD}"
-			else
-				clear
-				echo -e "${RED}Failed to add a user!${STD}"
-			fi
-			pause
+			return 1
 		fi
+		if [[ -z "$password" ]]; then
+			clear
+			echo -e "${RED}Password cannot be empty!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+		if getent passwd "$username" >/dev/null 2>&1; then
+			clear
+			echo -e "${RED}$username already exists!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+
+		if getent group wheel >/dev/null 2>&1; then
+			admin_group="wheel"
+		elif getent group sudo >/dev/null 2>&1; then
+			admin_group="sudo"
+		else
+			clear
+			echo -e "${RED}No admin group (wheel or sudo) found!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+
+		if ! useradd -m -G "$admin_group" "$username"; then
+			clear
+			echo -e "${RED}Failed to add user '$username'!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+
+		if printf '%s:%s\n' "$username" "$password" | chpasswd; then
+			clear
+			echo -e "${GREEN}$username has been added to system as admin ($admin_group)!${STD}"
+		else
+			userdel -r "$username" >/dev/null 2>&1 || true
+			clear
+			echo -e "${RED}Failed to set password for '$username'; user creation rolled back.${STD}"
+			pause
+			return 1
+		fi
+		pause
 	else
 		echo -e "${RED}Only admins may add a user to the system.${STD}" && sleep 2
 		pause
+		return 1
 	fi
 }
 
 # function to remove admin accounts
 three(){
 	if [[ $(id -u) -eq 0 ]]; then
-		local username
+		local username confirm
 		read -r -p "Enter username : " username
-		if [[ -z "$username" ]] || ! grep -qE "^${username}:" /etc/passwd; then
+		if [[ -z "$username" ]] || ! is_valid_username "$username"; then
+			clear
+			echo -e "${RED}Invalid username '$username'!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+		if [[ "$username" == "root" ]]; then
+			clear
+			echo -e "${RED}Refusing to delete the root account!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+		if ! getent passwd "$username" >/dev/null 2>&1; then
 			clear
 			echo -e "${RED}$username does not exist!${STD}" && sleep 2
 			pause
-		else
-			userdel -r "$username" && echo -e "${GREEN}$username has been deleted!${STD}" && sleep 2
-			pause
+			return 1
 		fi
+
+		read -r -p "Are you sure you want to delete '$username' and their home directory? [y/N]: " confirm
+		if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+			echo "Deletion cancelled." && sleep 2
+			pause
+			return 0
+		fi
+
+		if userdel -r "$username"; then
+			echo -e "${GREEN}$username has been deleted!${STD}" && sleep 2
+		else
+			echo -e "${RED}Failed to delete '$username'!${STD}" && sleep 2
+			pause
+			return 1
+		fi
+		pause
 	else
 		echo -e "${RED}Only admins may delete a user.${STD}" && sleep 2
 		pause
+		return 1
 	fi
 }
 
@@ -91,7 +165,7 @@ show_menus() {
 	echo "~~~~~~~~~~~~~~~~~~~~~~~"
 	echo "  A D M I N - M E N U  "
 	echo "~~~~~~~~~~~~~~~~~~~~~~~"
-	echo "1. List Admin Account  "
+	echo "1. List Admin Accounts "
 	echo "2. Create Admin Account"
 	echo "3. Delete Admin Account"
 	echo "4. Exit                "

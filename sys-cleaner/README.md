@@ -14,10 +14,10 @@ Deleting the wrong files or applications can cause system instability or data lo
 
 ## Features
 
-*   **File Scanning:** Find files that have not been accessed in a configurable number of days.
-*   **Application Scanning:** List manually installed packages from APT, Snap, and Flatpak.
-*   **Safe by Design:** Does not delete anything directly. Generates a script for you to review and run.
-*   **Configurable:** You can change the default settings, such as the age threshold for files and directories to exclude.
+*   **File Scanning:** Find files that have not been accessed in a configurable number of days (`-atime`). Note that access-time accuracy depends on your filesystem's mount options (e.g., `relatime` or `noatime`).
+*   **Application Scanning:** List manually installed APT packages (batched via `dpkg-query`), installed Snap packages (with revision, publisher, and notes), and Flatpak applications (`--app`).
+*   **Safe by Design:** Does not delete anything directly. Generates a shell-escaped removal script (using `--` flag termination and NUL-safe file handling) for you to review and run.
+*   **Configurable:** Customize the age threshold and excluded directories (both nested directory names like `.git` and relative subpaths like `.local/share/Trash`).
 
 ## Usage
 

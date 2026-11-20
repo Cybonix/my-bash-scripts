@@ -87,14 +87,14 @@ test_generate_removal_script() {
     fi
 
     # Check if files are correctly escaped and added once to the script
-    if ! grep -qF 'rm -v /tmp/test\ file\ 1.txt' "$expected_script"; then
+    if ! grep -qF 'rm -v -- /tmp/test\ file\ 1.txt' "$expected_script"; then
         echo "❌ FAILED: File 1 removal command not found or incorrect."
         rm -f "$expected_script"
         unset -f date
         return 1
     fi
 
-    if ! grep -qF 'rm -v /tmp/test_file_2.txt' "$expected_script"; then
+    if ! grep -qF 'rm -v -- /tmp/test_file_2.txt' "$expected_script"; then
         echo "❌ FAILED: File 2 removal command not found or incorrect."
         rm -f "$expected_script"
         unset -f date
@@ -103,7 +103,7 @@ test_generate_removal_script() {
 
     # Ensure no duplicate commands were written (2 files -> 2 rm commands)
     local rm_count
-    rm_count=$(grep -c '^rm -v ' "$expected_script")
+    rm_count=$(grep -c '^rm -v -- ' "$expected_script")
     if [[ "$rm_count" -ne 2 ]]; then
         echo "❌ FAILED: Expected 2 rm commands, found $rm_count"
         rm -f "$expected_script"

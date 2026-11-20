@@ -11,9 +11,9 @@ Here is a list of the scripts available in this repository:
 A menu-driven shell script for managing administrative accounts on a Linux system.
 
 **Features:**
-- List all regular user accounts within the system's configured `UID_MIN` and `UID_MAX` range.
-- Add a new admin user with an encrypted password and assign them to the administrative group (`wheel` or `sudo`).
-- Remove an existing admin user and their home directory.
+- List administrative accounts belonging to the system's `wheel` and `sudo` groups.
+- Add a new admin user with POSIX username validation, secure password assignment via `chpasswd`, and automatic assignment to the administrative group (`wheel` or `sudo`).
+- Remove an existing user and their home directory with confirmation and a guard preventing deletion of `root`.
 
 **Usage:**
 ```bash
@@ -26,15 +26,15 @@ sudo ./adminMenu.sh
 A unified backup script and shell function that supports both quick in-place file backups and compressed `.tar.gz` archive backups.
 
 **Features:**
-- **In-Place File Backup:** When given only a source file, creates a timestamped copy in the same directory (`<filename>.YYYY-MM-DD.HHMM.bak`) while preserving file attributes (`cp -p`).
-- **Tarball Archive Backup:** When given both a source file/directory and a destination directory, creates a compressed archive named `<hostname>-YYYY-MM-DD.HHMM.tar.gz` inside the destination directory.
+- **In-Place File Backup:** When given only a source file, creates a timestamped copy in the same directory (`<filename>.YYYY-MM-DD.HHMMSS.bak`) while preserving file attributes (`cp -p`) without overwriting existing backups.
+- **Tarball Archive Backup:** When given both a source file/directory and a destination directory, creates a compressed archive named `<hostname>-<source>-YYYY-MM-DD.HHMMSS.tar.gz` inside the destination directory with relative paths, overwrite protection, and self-inclusion prevention.
 - **Flexible Invocation:** Can be executed directly as `./backup.sh`, sourced in your shell (`source ./backup.sh && backup ...`), or configured via `BACKUP_SOURCE` and `BACKUP_DEST` environment variables.
 
 **Usage:**
 ```bash
 chmod +x backup.sh
 
-# 1. In-place file backup (<file>.YYYY-MM-DD.HHMM.bak)
+# 1. In-place file backup (<file>.YYYY-MM-DD.HHMMSS.bak)
 ./backup.sh /path/to/file.conf
 
 # 2. Compressed tarball archive in a destination directory
@@ -53,9 +53,9 @@ backup /path/to/file.conf
 A script to monitor user activity on the system. It shows who is currently logged in and provides information about their recent activity.
 
 **Features:**
-- Lists currently logged-in users and the duration of their session.
-- Shows the last logged-in users.
-- Displays recent file and directory commands executed by users from their `.bash_history`.
+- Lists currently logged-in users (`who -u`) and the duration of their session.
+- Shows historical logins (`last -F`) with full timestamps.
+- Displays recent file and directory commands executed by each real user from their `.bash_history` (deduplicated across repeated login sessions).
 
 **Usage:**
 ```bash
